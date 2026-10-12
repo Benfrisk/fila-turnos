@@ -1,5 +1,5 @@
 const services=[...document.querySelectorAll('.service-card')];let selected=services[0],nextNumber=1,waiting=[],toastTimer,activeTicket=null,ticketIds=[];
-const desks=[{number:1,turn:null},{number:2,turn:null},{number:3,turn:null},{number:4,turn:null}],deskTimers=new Map(),TURN_DURATION_MS=3000;
+const desks=[{number:1,turn:null},{number:2,turn:null},{number:3,turn:null},{number:4,turn:null}],deskTimers=new Map(),TURN_DURATION_MS=10000;
 const $=id=>document.getElementById(id);
 function scheduleDeskRelease(desk){
  clearTimeout(deskTimers.get(desk.number));
@@ -26,6 +26,7 @@ function restoreBoard(data){
   const savedIds=Array.isArray(saved.ticketIds)?saved.ticketIds:[saved.activeTicketId];
   ticketIds=savedIds.map(Number).filter(id=>Number.isInteger(id)&&tickets.some(t=>t.id===id));
   activeTicket=[...ticketIds].reverse().map(id=>tickets.find(t=>t.id===id)).find(Boolean)||null;
+  dispatchWaiting();
  }catch{}
 }
 function syncTicketControls(){
@@ -57,12 +58,16 @@ function render(persist=true){
  document.querySelectorAll('.finish-btn').forEach(btn=>btn.addEventListener('click',()=>finishDesk(Number(btn.dataset.desk))));
  if(activeTicket){const assigned=desks.find(d=>d.turn===activeTicket);const isWaiting=waiting.includes(activeTicket);if(assigned){$('ticketStatus').textContent='ES TU TURNO';$('ticketHeading').textContent=`Pasa a la mesa ${assigned.number}.`;$('ticketMessage').textContent='Tu mesa ya está lista para atenderte.';$('ticketWait').textContent='Ahora';$('ticketDesk').textContent=`Mesa ${assigned.number}`;$('ticketPanel').classList.add('called')}else if(isWaiting){$('ticketStatus').textContent='TURNO EN ESPERA';$('ticketHeading').textContent='Espera a que se desocupe una mesa.';$('ticketMessage').textContent='Tu turno avanzará en orden cuando una mesa quede libre.';const ahead=waiting.indexOf(activeTicket);$('ticketWait').textContent=ahead===0?'Siguiente':`${ahead} antes`;$('ticketDesk').textContent='Te avisaremos aquí';$('ticketPanel').classList.remove('called')}}
 }
-function takeNextFor(desk){if(waiting.length){const next=waiting.shift();assignTurn(desk,next);if(next.id===activeTicket?.id)toast(`¡Turno ${next.id}! Pasa a la mesa ${desk.number}.`);return next}return null}
-function finishDesk(number){const desk=desks.find(d=>d.number===number);if(!desk||!desk.turn)return;clearTimeout(deskTimers.get(number));deskTimers.delete(number);const finished=desk.turn;desk.turn=null;const next=takeNextFor(desk);ticketIds=ticketIds.filter(id=>id!==finished.id);syncTicketControls();render();if(next)toast(`Turno ${next.id}: pase a mesa ${number}.`);else toast(`Mesa ${number} libre. En espera: ${waiting.length}.`)}
+function dispatchWaiting(){
+ const assigned=[];
+ desks.filter(d=>!d.turn).forEach(desk=>{if(!waiting.length)return;const next=waiting.shift();assignTurn(desk,next);assigned.push({turn:next,desk});if(next.id===activeTicket?.id)toast(`¡Turno ${next.id}! Pasa a la mesa ${desk.number}.`)});
+ return assigned;
+}
+function finishDesk(number){const desk=desks.find(d=>d.number===number);if(!desk||!desk.turn)return;clearTimeout(deskTimers.get(number));deskTimers.delete(number);const finished=desk.turn;desk.turn=null;ticketIds=ticketIds.filter(id=>id!==finished.id);const assigned=dispatchWaiting();syncTicketControls();render();if(assigned.length)toast(assigned.map(item=>`Turno ${item.turn.id}: mesa ${item.desk.number}`).join(' · '));else toast(`Mesa ${number} libre. En espera: ${waiting.length}.`)}
 services.forEach(card=>card.addEventListener('click',()=>{services.forEach(c=>c.classList.remove('selected'));card.classList.add('selected');selected=card}));
 $('takeTurn').addEventListener('click',()=>{activeTicket={id:nextNumber++,service:selected.dataset.service};ticketIds.push(activeTicket.id);const available=desks.find(d=>!d.turn);if(available){assignTurn(available,activeTicket);toast(`Turno ${activeTicket.id}: pase a la mesa ${available.number}.`)}else{waiting.push(activeTicket);$('ticketStatus').textContent='EN ESPERA';$('ticketHeading').textContent='Espera a que se desocupe una mesa.';$('ticketMessage').textContent='Tu turno avanzará en orden cuando una mesa quede libre.';toast(`Tu turno es ${activeTicket.id}. Espera a que se desocupe una mesa.`)}syncTicketControls();render()});
-$('cancelTicket').addEventListener('click',()=>{if(!activeTicket)return;const canceled=activeTicket;const queuedIndex=waiting.indexOf(canceled);if(queuedIndex>=0)waiting.splice(queuedIndex,1);else{const desk=desks.find(d=>d.turn?.id===canceled.id);if(desk){clearTimeout(deskTimers.get(desk.number));deskTimers.delete(desk.number);desk.turn=null;takeNextFor(desk)}}ticketIds=ticketIds.filter(id=>id!==canceled.id);syncTicketControls();render();toast('Turno cancelado.')});
+$('cancelTicket').addEventListener('click',()=>{if(!activeTicket)return;const canceled=activeTicket;const queuedIndex=waiting.findIndex(t=>t.id===canceled.id);if(queuedIndex>=0)waiting.splice(queuedIndex,1);else{const desk=desks.find(d=>d.turn?.id===canceled.id);if(desk){clearTimeout(deskTimers.get(desk.number));deskTimers.delete(desk.number);desk.turn=null;dispatchWaiting()}}ticketIds=ticketIds.filter(id=>id!==canceled.id);syncTicketControls();render();toast('Turno cancelado.')});
  $('adminBtn').addEventListener('click',()=>$('adminDialog').showModal());$('helpBtn').addEventListener('click',()=>toast('Acércate al módulo de información y con gusto te ayudamos.'));
 restoreBoard();syncTicketControls();render();
-window.addEventListener('storage',event=>{if(event.key!=='fila-board'||!event.newValue)return;try{restoreBoard(JSON.parse(event.newValue));syncTicketControls();render(false)}catch{}});
+window.addEventListener('storage',event=>{if(event.key!=='fila-board'||!event.newValue)return;try{restoreBoard(JSON.parse(event.newValue));syncTicketControls();render()}catch{}});
 
