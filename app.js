@@ -1,18 +1,18 @@
-const services=[...document.querySelectorAll('.service-card')];let selected=services[0],nextNumber=33,waiting=[],toastTimer,activeTicket=null;
-const desks=[{number:1,turn:{id:29,service:'Cajas'}},{number:2,turn:{id:30,service:'Atención a clientes'}},{number:3,turn:{id:31,service:'Cajas'}},{number:4,turn:{id:32,service:'Créditos'}}];
+const services=[...document.querySelectorAll('.service-card')];let selected=services[0],nextNumber=1,waiting=[],toastTimer,activeTicket=null;
+const desks=[{number:1,turn:null},{number:2,turn:null},{number:3,turn:null},{number:4,turn:null}];
 const $=id=>document.getElementById(id);
 function restoreBoard(data){
  try{
   const saved=data||JSON.parse(localStorage.getItem('fila-board')||'null');
-  if(!saved||!Array.isArray(saved.desks)||!Array.isArray(saved.waiting))return;
+  if(!saved||saved.version!==2||!Array.isArray(saved.desks)||!Array.isArray(saved.waiting)){if(!data)localStorage.removeItem('fila-board');return;}
   desks.forEach(d=>{
    const savedDesk=saved.desks.find(item=>Number(item.number)===d.number);
    if(savedDesk)d.turn=savedDesk.turn&&Number.isFinite(Number(savedDesk.turn.id))?{id:Number(savedDesk.turn.id),service:String(savedDesk.turn.service||'')}:null;
   });
   waiting=saved.waiting.filter(t=>t&&Number.isFinite(Number(t.id))).map(t=>({id:Number(t.id),service:String(t.service||'')}));
   const tickets=[...desks.map(d=>d.turn),...waiting].filter(Boolean);
-  const highestTicket=Math.max(32,...tickets.map(t=>t.id));
-  nextNumber=Math.max(33,Number(saved.nextNumber)||33,highestTicket+1);
+  const highestTicket=Math.max(0,...tickets.map(t=>t.id));
+  nextNumber=Math.max(1,Number(saved.nextNumber)||1,highestTicket+1);
   const activeId=Number(saved.activeTicketId);
   activeTicket=Number.isInteger(activeId)?tickets.find(t=>t.id===activeId)||null:null;
  }catch{}
@@ -35,17 +35,17 @@ function updateClock(){ $('currentTime').textContent=new Date().toLocaleTimeStri
 function toast(message){const el=$('toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2600)}
 function displayTurn(turn){return turn?`Turno ${turn.id}`:'Disponible'}
 function render(persist=true){
- if(persist)try{localStorage.setItem('fila-board',JSON.stringify({desks:desks.map(d=>({number:d.number,turn:d.turn})),waiting:waiting.map(t=>({id:t.id,service:t.service})),nextNumber,activeTicketId:activeTicket?.id??null,updatedAt:Date.now()}))}catch{}
+ if(persist)try{localStorage.setItem('fila-board',JSON.stringify({version:2,desks:desks.map(d=>({number:d.number,turn:d.turn})),waiting:waiting.map(t=>({id:t.id,service:t.service})),nextNumber,activeTicketId:activeTicket?.id??null,updatedAt:Date.now()}))}catch{}
  $('deskBoard').innerHTML=desks.map(d=>`<div class="desk-tile ${d.turn?'occupied':'free'}"><span class="desk-label">MESA ${d.number}</span><strong>${displayTurn(d.turn)}</strong><small>${d.turn?d.turn.service:'Esperando turno'}</small></div>`).join('');
  $('busyCount').textContent=desks.filter(d=>d.turn).length;$('waitingCount').textContent=waiting.length;
  $('adminDeskList').innerHTML=desks.map(d=>`<div><span>Mesa ${d.number}${d.turn?' · '+displayTurn(d.turn):' · Libre'}</span><b>${d.turn?d.turn.service:'Disponible'}</b><button type="button" class="finish-btn" data-desk="${d.number}" ${d.turn?'':'disabled'}>${d.turn?'Terminar atención':'Mesa libre'}</button></div>`).join('')+(waiting.length?`<div class="waiting-line"><span>En espera</span><b>${waiting.map(t=>t.id).join(' · ')}</b></div>`:'<div class="waiting-line"><span>En espera</span><b>Sin turnos pendientes</b></div>');
  document.querySelectorAll('.finish-btn').forEach(btn=>btn.addEventListener('click',()=>finishDesk(Number(btn.dataset.desk))));
- if(activeTicket){const assigned=desks.find(d=>d.turn===activeTicket);const isWaiting=waiting.includes(activeTicket);if(assigned){$('ticketStatus').textContent='ES TU TURNO';$('ticketHeading').textContent=`Pasa a la mesa ${assigned.number}.`;$('ticketMessage').textContent='Tu mesa ya está lista para atenderte.';$('ticketWait').textContent='Ahora';$('ticketDesk').textContent=`Mesa ${assigned.number}`;$('ticketPanel').classList.add('called')}else if(isWaiting){$('ticketStatus').textContent='TURNO EN ESPERA';$('ticketHeading').textContent='Ya estás en la fila.';$('ticketMessage').textContent='Al liberarse una mesa, pasará el siguiente turno en orden.';$('ticketWait').textContent=`${waiting.indexOf(activeTicket)} antes`;$('ticketDesk').textContent='Te avisaremos aquí';$('ticketPanel').classList.remove('called')}}
+ if(activeTicket){const assigned=desks.find(d=>d.turn===activeTicket);const isWaiting=waiting.includes(activeTicket);if(assigned){$('ticketStatus').textContent='ES TU TURNO';$('ticketHeading').textContent=`Pasa a la mesa ${assigned.number}.`;$('ticketMessage').textContent='Tu mesa ya está lista para atenderte.';$('ticketWait').textContent='Ahora';$('ticketDesk').textContent=`Mesa ${assigned.number}`;$('ticketPanel').classList.add('called')}else if(isWaiting){$('ticketStatus').textContent='TURNO EN ESPERA';$('ticketHeading').textContent='Espera a que se desocupe una mesa.';$('ticketMessage').textContent='Tu turno avanzará en orden cuando una mesa quede libre.';const ahead=waiting.indexOf(activeTicket);$('ticketWait').textContent=ahead===0?'Siguiente':`${ahead} antes`;$('ticketDesk').textContent='Te avisaremos aquí';$('ticketPanel').classList.remove('called')}}
 }
 function takeNextFor(desk){if(waiting.length){desk.turn=waiting.shift();if(desk.turn===activeTicket)toast(`¡Turno ${activeTicket.id}! Pasa a la mesa ${desk.number}.`);return desk.turn}return null}
 function finishDesk(number){const desk=desks.find(d=>d.number===number);if(!desk||!desk.turn)return;const finished=desk.turn;desk.turn=null;const next=takeNextFor(desk);if(finished===activeTicket){activeTicket=null;$('ticketPanel').classList.add('hidden');$('ticketPanel').classList.remove('called');$('takeTurn').disabled=false;$('takeTurn').innerHTML='Tomar turno <span>→</span>'}render();if(next)toast(`Turno ${next.id}: pase a mesa ${number}.`);else toast(`Mesa ${number} libre. En espera: ${waiting.length}.`)}
 services.forEach(card=>card.addEventListener('click',()=>{services.forEach(c=>c.classList.remove('selected'));card.classList.add('selected');selected=card}));
-$('takeTurn').addEventListener('click',()=>{if(activeTicket){toast('Ya tienes un turno activo.');return}activeTicket={id:nextNumber++,service:selected.dataset.service};const available=desks.find(d=>!d.turn);if(available){available.turn=activeTicket;toast(`Turno ${activeTicket.id}: pase a mesa ${available.number}.`)}else{waiting.push(activeTicket);toast(`Tu turno es ${activeTicket.id}. Ya estás en la fila.`)}$('ticketNumber').textContent=activeTicket.id;$('ticketService').textContent=activeTicket.service;$('ticketPanel').classList.remove('hidden');$('takeTurn').disabled=true;$('takeTurn').textContent='Turno tomado ✓';render()});
+$('takeTurn').addEventListener('click',()=>{if(activeTicket){toast('Ya tienes un turno activo.');return}activeTicket={id:nextNumber++,service:selected.dataset.service};const available=desks.find(d=>!d.turn);if(available){available.turn=activeTicket;toast(`Turno ${activeTicket.id}: pase a mesa ${available.number}.`)}else{waiting.push(activeTicket);$('ticketStatus').textContent='EN ESPERA';$('ticketHeading').textContent='Espera a que se desocupe una mesa.';$('ticketMessage').textContent='Tu turno avanzará en orden cuando una mesa quede libre.';toast(`Tu turno es ${activeTicket.id}. Espera a que se desocupe una mesa.`)}$('ticketNumber').textContent=activeTicket.id;$('ticketService').textContent=activeTicket.service;$('ticketPanel').classList.remove('hidden');$('takeTurn').disabled=true;$('takeTurn').textContent='Turno tomado ✓';render()});
 $('cancelTicket').addEventListener('click',()=>{if(!activeTicket)return;const queuedIndex=waiting.indexOf(activeTicket);if(queuedIndex>=0)waiting.splice(queuedIndex,1);else{const desk=desks.find(d=>d.turn===activeTicket);if(desk){desk.turn=null;takeNextFor(desk)}}activeTicket=null;$('ticketPanel').classList.add('hidden');$('ticketPanel').classList.remove('called');$('takeTurn').disabled=false;$('takeTurn').innerHTML='Tomar turno <span>→</span>';render();toast('Turno cancelado.')});
 $('adminBtn').addEventListener('click',()=>$('adminDialog').showModal());$('helpBtn').addEventListener('click',()=>toast('Acércate al módulo de información y con gusto te ayudamos.'));
 restoreBoard();syncTicketControls();render();
